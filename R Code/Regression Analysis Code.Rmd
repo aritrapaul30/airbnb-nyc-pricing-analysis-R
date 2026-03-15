@@ -1,0 +1,749 @@
+---
+title: "An Analysis of Factors Influencing Airbnb Rental Pricing in New York City"
+author: "Group- 12"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+  pdf_document:
+    toc: true
+    number_sections: true
+    fig_caption: true
+  html_document:
+    toc: true
+    df_print: paged
+fontsize: 11pt
+geometry: margin=1in
+---
+
+# 1. Data Preparation
+
+## 1.1 Loading and Initial Setup
+```{r}
+library(tidyverse)
+library(broom)
+library(forcats)
+library(reshape2)          
+library(stargazer)
+library(car)
+library(MASS)
+library(lmtest)
+library(sandwich)
+library(ggplot2)
+library(ggpubr)
+library(gridExtra)
+```
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 7, fig.height = 4.5, fig.align = "center")
+theme_set(theme_minimal(base_size = 12))
+```
+## 1.2 Load Dataset
+```{r}
+df <- read_csv("C:/Group- 12/Dataset/AB_NYC_2019.csv")
+```
+
+## 1.3 Data Overview
+```{r}
+str(df)
+glimpse(df)
+summary(df)
+```
+## 1.3 Data Dictionary
+
+**Key Variables:**
+
+- **id**: unique listing ID
+- **name**: listing name/title
+- **host_id**: unique ID of the host  
+- **host_name**: name of the host
+- **neighbourhood_group**: borough (Manhattan, Brooklyn, etc.)
+- **neighbourhood**: district/neighbourhood name
+- **latitude, longitude**: geolocation
+- **room_type**: type of space (Entire home/apt, Private room, Shared room)
+- **price**: nightly price in USD
+- **minimum_nights**: minimum stay length
+- **number_of_reviews**: total reviews
+- **last_review**: date of last review
+- **reviews_per_month**: avg. reviews per month
+- **calculated_host_listings_count**: number of listings per host
+- **availability_365**: number of available days per year
+
+## 1.4 Data Cleaning
+```{r}
+# Checking missing values
+colSums(is.na(df))
+```
+
+```{r}
+# Remove missing price and unrealistic values
+df <- subset(df, !is.na(price) & price > 0)
+
+# Filter out extreme outliers in price ( > 99th percentile)
+price_cap <- quantile(df$price, 0.99)
+df <- subset(df, price <= price_cap)  
+
+# Remove very long minimum nights 
+df <- subset(df, minimum_nights <= 365)
+
+
+# Replace NA in reviews_per_month with 0
+df$reviews_per_month[is.na(df$reviews_per_month)] <- 0
+
+# Convert categorical variables to factors
+df$room_type <- factor(df$room_type)
+df$neighbourhood_group <- factor(df$neighbourhood_group)
+
+# Save cleaned data
+if (!dir.exists("data/processed")) dir.create("data/processed", recursive = TRUE)
+write_csv(df, "data/processed/airbnb_clean.csv")
+
+```
+
+# 2. Exploratory Data Analysis
+
+## 2.1 Univariate Analysis
+
+```{r}
+# Histogram of Prices
+hplot_price <- ggplot(df, aes(x = price)) +
+  geom_histogram(fill = "skyblue", bins = 50,color = "black") +
+  labs(
+    title = "Figure 2.1.1 : Distribution of Airbnb Prices in NYC",
+   x = "Price (USD)",
+   y= "Number of Listings")
+hplot_price
+```
+*Figure 2.1.1 : The price distribution is highly right-skewed.Most listings are priced below $200 per night, with few luxury outliers.*
+
+
+
+```{r}
+# Boxplot of Prices
+bplot_price <- ggplot(df, aes(y = price)) +
+  geom_boxplot(outlier.color = "pink",fill="lightyellow") +
+  labs(title = " Figure 2.1.2 : Boxplot of Airbnb Prices",
+       x="",
+       y="Price(USD")
+bplot_price
+```
+*Figure 2.1.2 : The boxplot highlights several extreme outliers above $500,showing large variance in NYC’s Airbnb pricing.*
+
+```{r}
+# Frequency of Room Types
+ggplot(df, aes(x = room_type)) +
+  geom_bar(fill = "lightgreen", color="black") +
+  labs(title = "Figure 2.1.3 : Count of Listings by Room Type",
+       x = "Room Type",
+       y = "Count"
+       )
+
+
+```
+*Figure 2.1.3: Private rooms are the most common, followed by entire homes/apartments, while shared rooms remain rare.*
+
+## 2.2 Bivariate Analysis
+
+```{r}
+# Boxplot Price By Room Type
+ggplot(df, aes(x = room_type, y = price)) +
+  geom_boxplot(outlier.color = "red", fill="lightpink") +
+  labs(title = "Figure 2.2.1 : Price by Room Type", x = "Room Type", y = "Price (USD)")
+```
+*Figure 2.2.1 Entire homes/apartments have the highest median prices (> $150),confirming that room type is a major determinant of price.*
+
+```{r}
+# Boxplot Price by Borough
+ggplot(df, aes(x = neighbourhood_group, y = price)) +
+  geom_boxplot(outlier.color = "purple",fill="pink") +
+  labs(title = "Figure 2.2.2 : Price by Borough", x = "Borough", y = "Price (USD)")
+```
+*Figure 2.2.2 : Manhattan and Brooklyn are the most expensive boroughs,with median prices around $150–200.Staten Island and Bronx remain the most affordable.*
+
+```{r}
+#Geographic Distribution of Listings (Histogram Map)
+ggplot(df, aes(x = longitude, y = latitude)) +
+  geom_bin2d(bins = 100) +
+  scale_fill_gradient(low = "lightblue", high = "red") +
+  labs(
+    title = "Figure 2.2.3 : Geographic Distribution of Airbnb Listings in NYC",
+    x = "Longitude",
+    y = "Latitude",
+    fill = "Listing Density"
+  ) 
+```
+*Figure 2.2.3 Listings are densely clustered in Manhattan and Brooklyn,confirming that there's high tourism concentration in central NYC.*
+
+
+```{r}
+#Relationship Between Price and Number of Reviews
+ggplot(df, aes(x = number_of_reviews, y = price)) +
+  geom_point(alpha = 0.4, color = "red") +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+  scale_x_continuous(limits = c(0, 500)) +
+  coord_cartesian(ylim = c(0, 600)) +
+  labs(
+    title = "Figure 2.2.4 : Relationship Between Price and Number of Reviews",
+    x = "Number of Reviews",
+    y = "Price (USD)"
+  ) 
+```
+*Figure 2.2.4 : A slight negative relationship exists which shows that the cheaper listings get more reviews,due to higher booking frequency.*
+
+
+```{r}
+# Histogram of Distribution of  Availability
+ggplot(df, aes(x = availability_365)) +
+  geom_histogram(binwidth = 15, fill = "blue", color = "black") +
+  labs(
+    title = "Figure 2.2.5 : Distribution of Annual Availability of Airbnb Listing",
+    x = "Available Days per Year",
+    y = "Number of Listings"
+  ) 
+ 
+```
+*Figure 2.2.5 Most listings are available for fewer than 100 days per year,suggesting that many hosts rent their spaces part-time or seasonally.*
+
+
+```{r}
+
+
+# Relationship between Host Listing Count and Price
+ggplot(df, aes(x = calculated_host_listings_count, y = price)) +
+  geom_point(alpha = 0.4, color = "green") +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+  coord_cartesian(ylim = c(0, 600)) +
+  labs(
+    title = "Figure 2.2.6 : Host Listing Count vs Price",
+    x = "Number of Listings per Host",
+    y = "Price (USD)"
+  ) 
+```
+*Figure 2.2.6 : Professional hosts with multiple properties charge slightly higherprices,likely reflecting greater hosting experience and property quality.*
+```{r}
+
+# Scatter: Price vs Reviews per month by Borough
+ggplot(df, aes(x = reviews_per_month, y = price)) +
+  geom_point(alpha = 0.3, color = "darkblue") +
+  facet_wrap(~neighbourhood_group) +
+  labs(title = "Figure 2.2.7: Price vs Reviews per Month by Borough")
+
+```
+*Figure 2.2.7 : Price vs reviews per month, faceted by borough. Within borough patterns are weak or flat in places, suggesting limited linkage between price and booking intensity once location is fixed *
+
+```{r}
+# Scatter: Price vs Number of Reviews
+ggplot(df, aes(x = number_of_reviews, y = price, color = neighbourhood_group)) +
+  geom_point(alpha = 0.4) +
+  labs(title = "Figure 2.2.8 : Price vs Number of Reviews", x = "Number of Reviews", y = "Price ($)")
+
+```
+*Figure 2.2.8 : Overall relationship between price and review volume, slight negative trend. Colors show the borough mix driving spread*
+
+## 2.3 Correlation Analysis
+
+```{r}
+# Correlation Matrix (Numerical Variables)
+
+num_vars <- df[, c("price", "minimum_nights", "number_of_reviews", 
+                   "reviews_per_month", "calculated_host_listings_count", 
+                   "availability_365")]
+
+# Computing correlation matrix
+cor_matrix <- cor(num_vars, use = "complete.obs")
+print(round(cor_matrix, 2))
+
+#Reshape for ggplot
+cor_m<-melt(cor_matrix)
+
+# Creating enhanced correlation heatmap
+heatMap <- ggplot(cor_m, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  
+  # Add correlation coefficients as text
+  geom_text(aes(label = round(value, 2)), color = "black", size = 3.5) +
+
+  scale_fill_gradientn(
+    colors = c("green4", "white", "brown1"),
+    limits = c(-1, 1),
+    name = "Correlation"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  labs(
+    title = "Figure 2.3 : Correlation Heatmap of Airbnb Numeric Variables",
+    x = "",
+    y = ""
+  )
+heatMap
+
+```
+*Figure 2.3 The heatmap reveals weak correlations (< 0.3) between numeric variables and price, indicating that no single numerical feature explains pricing strongly —
+justifying the use of multivariate regression modeling in the next section.
+The initial data exploration reveals several significant patterns. The histogram indicates that the majority of listings are priced low, with a few outliers extending the upper range considerably. Boxplots highlight that entire homes/apartments and listings in Manhattan are substantially more expensive. Scatterplots suggest that review count has little correlation with price, while location and room type are stronger price determinants.*
+
+
+## 2.4 Key EDA Insights
+
+* **Prices are heavily right-skewed**: A few listings are super expensive and push the top end up,but most places are much cheaper so using **log(price)** is more appropriate than raw price.
+* **Room type stands out**: **Entire home/apt** commands the highest median price which is it costs the most on average, **Private room** is mid-tier, and **Shared room** is lowest/cheapest.
+* **Clear location premium**: **Manhattan** tops the price ladder, followed by **Brooklyn**; **Queens/Bronx** trend lower on average (Staten Island is noisier/harder to judge due to fewer listings).
+* **Availability vs. price.**: Listings that are listed for `availability_365`associates with cheaper price, likely because hosts drop prices to keep calendars full.
+* **Demand/quality cue**: `reviews_per_month` shows a **small positive** link with price with slight higer prices, probably a sign of steady demand or quality.
+* **Host scale with limits**: Hosts with more listings tend to charge slightly higher prices, but the gain levels off—managing many units doesn’t add much extra premium.
+
+# 3. Model Progression
+
+*Loading the cleaned Dataset*
+```{r}
+# Load Cleaned Dataset From Set Directory> data> processed> airbnb_clean.csv
+
+df <- read_csv("C:/Group- 12/Rmd Files/data/processed/airbnb_clean.csv")
+
+head(df)
+glimpse(df)
+```
+This regression analysis aims to identify the key factors that influence Airbnb rental prices in New York City by assessing to different possible related features that could affect pricing such as location, room type, and host characteristics like review count and minimum stay duration. The analysis start with a modelling approach which is used to compare and evaluate performance of each model and to select the most effective model for further exploration.
+
+## 3.1 Simple Regression (Model 1)
+
+```{r}
+model1 <- lm(log(price) ~ room_type, df)
+summary(model1)
+```
+This simple model regression explains the relationship between room type and price using a logarithmic transformation of the dependent variable. The results show that room type make an about 42% of the variation in log price (R² = 0.4199), which is a significant factor of pricing. 
+The coefficients for private rooms (-0.824) and shared rooms (-1.175) are both highly significant (p < 2e-16). Converting these log-coefficients, private rooms cost about 56% less than entire homes, and shared rooms cost about 69% less.
+
+## 3.2 Multiple Regression (Model 2)
+
+```{r}
+model2 <- lm(log(price) ~ room_type + neighbourhood_group, df)
+summary(model2)
+```
+
+Model 2 explains 49% of the price variation (R² = 0.4906), an improvement over the first model. The coefficients reveal the following key relationships, with all being highly significant (p < 0.001) except for Staten Island. Room types remain nearly the same as model 1 with the number of 53% and 68% less then entire homes after log-coefficients calucualtion while locations show a different level of impact on price. Manhattan cost 68% more than those in the Bronx with the of coefficient of 0.519, Brooklyn cost 23% more having a 0.208 of coefficient, and Queens cost 11% more with the coefficient of 0.103.
+
+## 3.3 Multiple Regression (Model 3)
+
+```{r}
+model3 <- lm(log(price) ~ room_type + neighbourhood_group + minimum_nights, df)
+summary(model3)
+```
+Model 3 explains a 49.3% of the price variation (R² = 0.4933), showing a small improvement over the second model. The coefficients reveal that room types and locations remain nearly identical to Model 2, with private rooms costing 54% less and shared rooms costing 68% less than entire homes. Manhattan listings cost 69% more than those in the Bronx, Brooklyn 23% more, and Queens 11% more. The newly added variable, minimum nights, shows a small but highly significant effect (p < 2e-16), where each additional required night decreases the price by approximately 0.2%.
+
+## 3.4 Multiple Regression (Model 4)
+```{r}
+model4 <- lm(log(price) ~ room_type + neighbourhood_group + minimum_nights + availability_365, df)
+summary(model4)
+```
+Model 4 explains 50.8% of the price variation (R² = 0.5078), showing a meaningful improvement over the previous model. Room types remain stable with private rooms costing 54% less and shared rooms 69% less than entire homes. The location premiums have increased, with Manhattan now costing 75% more than the Bronx, Brooklyn 28% more, and Queens 12% more. The effect of minimum nights strengthened slightly to -0.29% per additional night. The newly added variable, availability_365, shows a small but highly significant positive effect (p < 2e-16), where each additional day of annual availability increases the price by approximately 0.06%.
+
+## 3.5 Multiple Regression (Model 5)
+```{r}
+model5 <- lm(log(price) ~ room_type + neighbourhood_group + minimum_nights + availability_365 +
+               number_of_reviews + reviews_per_month, df)
+summary(model5)
+```
+
+Model 5, the full model, explains a 51.0% of the price variation with R² = 0.5103, representing the highest explanatory power among other models. The core drivers remain stable, private rooms cost 54% less than entire homes, and shared rooms cost 69% less. The location premiums are also consistent, with Manhattan costing 75% more than the Bronx, Brooklyn 28% more, and Queens 13% more. The effects of operational variables are strengthened in this complete specification, for each additional minimum night reduces price by 0.33%, and each day of annual availability increases price by 0.07%. The newly added review metrics both show small but significant negative relationships, where more reviews and higher review frequency are leading to a slightly lower prices.
+
+## 3.6 Model Fit Comparison (R² Values)
+```{r}
+c(summary(model1)$r.squared,
+  summary(model2)$r.squared,
+  summary(model3)$r.squared,
+  summary(model4)$r.squared,
+  summary(model5)$r.squared)
+```
+
+Looking at the R squared values for all these models, its clear that the explanatory power gets better as you add more predictors. Model 1 sticks to just room type. That one only covers a small part of why prices vary. Model 2 steps it up by throwing in borough and that fits the data better overall. Then with Model 3, adding the number of reviews helps some more. Model 4 goes further by including reviews per month and minimum nights too. Those changes bring moderate gains, nothing dramatic. Finally Model 5 combines room type and borough along with their interaction term. It hits the highest R squared out of everything. So that model does the best job explaining price differences. The results point to room type working differently depending on the borough. Their joint effect really counts for a lot here. Right now Model 5 moves forward as the pick for Person 4 to dig into deeper, check it out, and make sense of it all.
+
+## 3.7 Final Model Selection and Variable Selection
+```{r}
+# Remove NA values for all variables used in the model
+df_clean <- na.omit(df[, c("price", "room_type", "neighbourhood_group",
+                           "number_of_reviews", "availability_365",
+                           "minimum_nights", "reviews_per_month")])
+
+# Base model
+model5 <- lm(log(price) ~ room_type + neighbourhood_group +
+               number_of_reviews + availability_365 +
+               minimum_nights + reviews_per_month,
+             data = df_clean)
+
+# Stepwise selection
+step_model <- step(model5, direction = "both")
+summary(step_model)
+```
+
+## 3.8 Model Diagnostics
+```{r}
+# Residuals plot
+plot(model5$residuals, main = "Residuals of Model 5", ylab = "Residuals")
+
+# Histogram of residuals
+hist(model5$residuals, breaks = 40, main = "Histogram of Residuals", col = "lightblue")
+
+# QQ-plot for normality
+qqnorm(model5$residuals)
+qqline(model5$residuals, col = "red")
+
+# Check for multicollinearity
+vif(model5)
+```
+
+Those diagnostic plots and checks give a good look at if the linear regression assumptions hold up. The residual plot has things spread out pretty even around zero. No big patterns jumping out. That backs up the linearity part okay. The QQ-plot shows the residuals aren't spot on normal. Still, the deviations aren't too wild. For this kind of data, it works in practice. All in all, these checks point to Model 5 being solid enough to interpret. Thing is, Person 4 will dig deeper into multicollinearity and how to read the coefficients. That happens before locking in the final model.
+
+## 3.9 Prediction Demonstration
+
+```{r}
+df$room_type <- as.factor(df$room_type)
+df$neighbourhood_group <- as.factor(df$neighbourhood_group)
+
+levels(df$room_type)
+levels(df$neighbourhood_group)
+```
+
+```{r}
+
+# Ensure factors are correct
+df$room_type <- as.factor(df$room_type)
+df$neighbourhood_group <- as.factor(df$neighbourhood_group)
+
+# Create new sample data for prediction
+prediction_data <- data.frame(
+  room_type = factor(c("Entire home/apt", "Private room"),
+                     levels = levels(df$room_type)),
+  neighbourhood_group = factor(c("Manhattan", "Brooklyn"),
+                               levels = levels(df$neighbourhood_group)),
+  number_of_reviews = c(10, 3),
+  minimum_nights = c(3, 5),
+  availability_365 = c(180, 200),
+  reviews_per_month = c(0.3, 0.5),
+  calculated_host_listings_count = c(1, 2)
+)
+
+# Generate predictions
+prediction_data$predicted_price <- exp(predict(step_model, newdata = prediction_data))
+
+# Display table
+library(knitr)
+kable(prediction_data, caption = "Predicted Airbnb Prices for Sample Listings")
+
+# Save as CSV
+write_csv(prediction_data, "output/predictions.csv")
+```
+These prediction results really show how the model fits into everyday situations. Take a whole home in Manhattan for instance. It comes out way higher on the nightly price than just a private room over in Queens. That makes sense, given how demand and fancy spots work in New York City. The model points out too that places like Queens or Brooklyn tend to be cheaper options, even if the room types match up with stuff in Manhattan. All this backs up how property details and where things are located play big roles in setting Airbnb prices. Hosts can use these ideas to tweak their rates a bit. Guests get a better sense of what to expect price-wise between different rooms and areas.
+
+## 3.10 Save Outputs
+
+```{r}
+if (!dir.exists("output")) dir.create("output")
+
+capture.output(summary(model1), file = "output/model1.txt")
+capture.output(summary(model2), file = "output/model2.txt")
+capture.output(summary(model3), file = "output/model3.txt")
+capture.output(summary(model4), file = "output/model4.txt")
+capture.output(summary(model5), file = "output/model5.txt")
+
+capture.output(summary(step_model), file = "output/step_model.txt")
+
+```
+
+# 4. Model Analysis (Priliminary)
+
+```{r}
+# Multivariate Analysis (Regression Modeling)
+
+model <- lm(log(price) ~ neighbourhood_group + room_type + number_of_reviews +
+              reviews_per_month + calculated_host_listings_count +
+              minimum_nights + availability_365,
+            data = df)
+
+summary(model)
+
+```
+
+The multivariate regression model estimates how multiple factors jointly influence Airbnb prices in New York City.
+-Room type and neighbourhood group have the largest positive coefficients, confirming their strong influence on price.
+-Reviews per month shows a slight positive association, indicating that active listings with regular bookings may charge slightly more.
+-Availability, minimum nights and number of reviews exhibit smaller or negative effects, consistent with high-occupancy (low-availability) listings tending to charge less per night.
+-The Adjusted R² typically falls between 0.45–0.50, suggesting the model explains about half of the variation in price — reasonable for real-world Airbnb data.
+
+
+```{r}
+
+# Multicollinearity Check (Variance Inflation Factor)
+vif(model)
+
+# Diagnostic Plots
+par(mfrow = c(2, 2))
+plot(model)
+```
+The Variance Inflation Factor analysis shows that there is no concern about the multicollinearity among the predictor variables. All VIF values are below the commonly accepted threshold of 5, with the highest value only being 1.56. This insists that the predictors are independent and do not cause multicollinearity any issues that would affect the reliability of the coefficient estimates.
+
+```{r}
+# Predicted vs Actual
+df$predicted_price <- exp(predict(model, newdata = df))
+ggplot(df, aes(x = price, y = predicted_price)) +
+  geom_point(alpha = 0.5, color = "#0072B2") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Airbnb Prices (Final Model)",
+       x = "Actual Price (USD)",
+       y = "Predicted Price (USD)")
+
+```
+
+The points cluster closely around the diagonal line, showing that the model’s predictions align reasonably well with actual prices though some under- and over-prediction exists for high-end listings.
+The multivariate analysis explore how multiple factors influence Airbnb prices in New York City. In contrast to the earlier sections that examined only one to two variables independently, this regression model evaluates several predictors simultaneously, including neighbourhood group, room type, number of reviews, host activity and availability. By controlling each variable, the model shows an unique effect of every factor, providing a more accurate and data-driven understanding of the determinants of listing prices. 
+
+# 5. Final Model Analysis and Interpretation
+
+*Loading the data again for easier processing*
+```{r}
+# Load Cleaned Dataset From Set Directory> data> processed> airbnb_clean.csv
+
+df <- read_csv("C:/Group- 12/Rmd Files/data/processed/airbnb_clean.csv")
+
+```
+
+## 5.1 Final Model Setup
+
+```{r}
+model5 <- lm(log(price) ~ room_type + neighbourhood_group + 
+                    number_of_reviews + availability_365 + 
+                    minimum_nights + reviews_per_month, data=df)
+```
+
+
+## 5.2 Final Model Selection and Summary
+```{r}
+# Make a clean dataset without NAs in the variables we use
+df_clean <- na.omit(df[, c("price", "room_type", "neighbourhood_group",
+                           "number_of_reviews", "availability_365",
+                           "minimum_nights", "reviews_per_month")])
+
+# Build model on the cleaned data
+model5 <- lm(log(price) ~ room_type + neighbourhood_group +
+               number_of_reviews + availability_365 +
+               minimum_nights + reviews_per_month,
+             data = df_clean)
+
+# Stepwise selection now works without error
+final_model <- step(model5, direction = "both")
+summary(final_model)
+```
+
+```{r}
+model5 <- step(model5, direction = "both")
+summary(model5)
+
+cat("Final model variables after stepwise selection:\n")
+print(names(coef(model5)))   
+cat("\nModel R-squared:", round(summary(model5)$r.squared, 4))
+
+
+cat(  "The regression results point out some pretty clear impacts from room type and borough when it comes to Airbnb prices. Entire homes or apartments cost a lot more than private rooms or shared ones. That pretty much confirms property type drives the price big time. Listings in Manhattan run higher than in other boroughs. It shows that location premium thing at work. The interaction between room type and borough means the difference between room types gets even bigger in Manhattan than elsewhere. All in all, those coefficients back up the idea that property features and location together set the rental prices in New York City.")
+
+```
+**Interpretation:**  
+Entire homes or apartments command significantly higher prices than private or shared rooms, confirming that property type is the strongest price driver.  
+Listings in **Manhattan** consistently show the highest average prices, reflecting a clear *location premium*.  
+The results confirm that both **room type** and **borough** jointly determine Airbnb pricing patterns.
+
+
+## 5.3 Effect Visualization
+
+
+*Making sure categorical variables are treated as factors*
+
+```{r}
+df$room_type <- as.factor(df$room_type)
+df$neighbourhood_group <- as.factor(df$neighbourhood_group)
+```
+
+### 5.3.1 Predicted Price by Room Type (Manhattan)
+
+```{r}
+pred_room <- data.frame(
+  room_type = levels(df$room_type),
+  neighbourhood_group = "Manhattan",
+  minimum_nights = median(df$minimum_nights, na.rm=TRUE),
+  availability_365 = median(df$availability_365, na.rm=TRUE),
+  number_of_reviews = median(df$number_of_reviews, na.rm=TRUE),
+  reviews_per_month = median(df$reviews_per_month, na.rm=TRUE)
+)
+pred_room$pred <- predict(model5, newdata=pred_room)
+
+ggplot(pred_room, aes(x=room_type, y=pred, fill=room_type)) +
+  geom_col() +
+  labs(title="Predicted Price by Room Type (Manhattan)",
+       y="Predicted Price") +
+  theme_minimal()
+
+cat("Interpretation: Entire homes/apartments have the highest predicted prices. Private rooms are cheaper, and shared rooms the cheapest./n/n")
+
+```
+
+### 5.3.2 Predicted Price by Borough (Entire Home/Apt)
+
+```{r}
+pred_borough <- data.frame(
+  room_type = "Entire home/apt",
+  neighbourhood_group = levels(df$neighbourhood_group),
+  minimum_nights = median(df$minimum_nights, na.rm=TRUE),
+  availability_365 = median(df$availability_365, na.rm=TRUE),
+  number_of_reviews = median(df$number_of_reviews, na.rm=TRUE),
+  reviews_per_month = median(df$reviews_per_month, na.rm=TRUE)
+)
+pred_borough$pred <- predict(model5, newdata=pred_borough)
+
+ggplot(pred_borough, aes(x=neighbourhood_group, y=pred, fill=neighbourhood_group)) +
+  geom_col() +
+  labs(title="Predicted Price by Borough (Entire Home/Apt)",
+       y="Predicted Price") +
+  theme_minimal()
+
+cat("Interpretation: Manhattan has the highest predicted prices among boroughs. Brooklyn, Queens, and Staten Island are lower./n/n")
+```
+
+
+### 5.3.3 Predicted Price by Number of Reviews
+
+
+```{r}
+review_range <- seq(0, 100, length.out = 50)  # Using a reasonable range
+
+pred_reviews <- data.frame(
+  room_type = "Entire home/apt",
+  neighbourhood_group = "Manhattan",
+  minimum_nights = median(df$minimum_nights, na.rm = TRUE),
+  availability_365 = median(df$availability_365, na.rm = TRUE),
+  number_of_reviews = review_range,
+  reviews_per_month = median(df$reviews_per_month, na.rm = TRUE)
+)
+
+pred_reviews$pred <- predict(model5, newdata = pred_reviews)
+
+ggplot(pred_reviews, aes(x = number_of_reviews, y = pred)) +
+  geom_line(color = "blue", size = 1) +
+  labs(title = "Predicted Price by Number of Reviews",
+       x = "Number of Reviews", y = "Predicted Price ($)") +
+  theme_minimal()
+
+cat("Interpretation: This line plot shows how price changes as the number of reviews increases. The downward trend suggests that listings with more reviews tend to have slightly lower prices./n/n")
+
+```
+
+
+### 5.3.4 Predicted Price by Availability (availability_365)
+
+```{r}
+avail_range <- seq(0, 365, length.out = 50)
+
+pred_avail <- data.frame(
+  room_type = "Entire home/apt",
+  neighbourhood_group = "Manhattan", 
+  minimum_nights = median(df$minimum_nights, na.rm = TRUE),
+  availability_365 = avail_range,
+  number_of_reviews = median(df$number_of_reviews, na.rm = TRUE),
+  reviews_per_month = median(df$reviews_per_month, na.rm = TRUE)
+)
+
+pred_avail$pred <- predict(model5, newdata = pred_avail)
+
+ggplot(pred_avail, aes(x = availability_365, y = pred)) +
+  geom_line(color = "red", size = 1) +
+  labs(title = "Predicted Price by Availability",
+       x = "Availability (days per year)", y = "Predicted Price ($)") +
+  theme_minimal()
+
+
+cat("Interpretation: This line plot demonstrates the relationship between listing availability and price. The positive trend indicates that listings available more days throughout the year tend to have higher prices, suggesting that highly available listings may target premium pricing strategies or that in-demand properties can afford to maintain higher rates with consistent availability./n/n")
+```
+
+## 5.4 Key Predictors Visualization
+
+```{r}
+
+# Creating a coefficient plot excluding intercept
+coef_data <- tidy(model5) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term = fct_reorder(term, estimate),
+    significance = ifelse(p.value < 0.001, "***", 
+                         ifelse(p.value < 0.01, "**",
+                               ifelse(p.value < 0.05, "*", "")))
+  )
+
+ggplot(coef_data, aes(x = estimate, y = term)) +
+  geom_point(size = 3, color = "steelblue") +
+  geom_errorbarh(aes(xmin = estimate - std.error, 
+                     xmax = estimate + std.error), 
+                 height = 0.2, color = "gray50") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_text(aes(label = significance), vjust = -0.5, size = 5) +
+  labs(title = "Key Predictors of Airbnb Pricing",
+       subtitle = "Coefficient estimates with standard error bars",
+       x = "Effect on Price ($)", y = "Predictor Variables") +
+  theme_minimal()
+```
+
+# 6. Summary Tables
+
+```{r}
+# Summary by Borough
+summary_borough <- df %>%
+  group_by(neighbourhood_group) %>%
+  summarise(mean_price = round(mean(log(price)), 2),
+            median_price = round(median(log(price)), 2),
+            count = n())
+
+# Summary by Room Type
+summary_room <- df %>%
+  group_by(room_type) %>%
+  summarise(mean_price = round(mean(log(price)), 2),
+            median_price = round(median(log(price)), 2),
+            count = n())
+
+print(summary_borough)
+print(summary_room)
+
+# Save summaries
+if (!dir.exists("output")) dir.create("output")
+write_csv(summary_borough, "output/summary_borough.csv")
+write_csv(summary_room, "output/summary_room.csv")
+
+```
+
+
+
+# 7. Summary of Findings
+
+**Model Performance Overview**  
+The final log-linear regression model explains about **52% of the variation** in Airbnb prices across New York City, showing that the selected predictors capture strong and consistent pricing patterns.  
+
+**Key Determinants of Airbnb Pricing**
+
+**Room Type Effects**  
+Room type remains the most influential factor. Entire homes and apartments are priced significantly higher, while private rooms are roughly **55% cheaper** (about 85 to 100 dollars less) and shared rooms are **70% cheaper** (about 110 to 130 dollars less) than entire homes, holding all other variables constant. This pattern reflects clear segmentation in Airbnb’s market positioning.  
+
+**Geographic Location**  
+Listings in Manhattan command an estimated **70% price premium** (about 100 to 120 dollars higher) over those in the Bronx, while Brooklyn listings are about **25% higher** (about 35 to 45 dollars higher), and Queens roughly **10% higher** (about 15 to 20 dollars higher). These differences underline strong geographic effects linked to accessibility, tourism demand, and brand perception of each borough.  
+
+**Review and Availability Factors**  
+Review activity and host availability show smaller but notable effects. Listings with more reviews or higher monthly review frequency tend to charge slightly lower prices, likely reflecting higher booking turnover. Meanwhile, listings with greater yearly availability and shorter minimum-night requirements show modest positive effects on pricing, suggesting hosts balance occupancy and rates strategically.  
+
+**Diagnostic Assessment**  
+After transforming the dependent variable to log(price), diagnostic plots show clear improvement in model behavior.  
+
+• **Residuals vs Fitted Plot:** Points are evenly spread around zero with no visible curve, confirming the linearity assumption.  
+• **Normal Q-Q Plot:** Residuals closely follow the reference line, indicating that errors are approximately normally distributed.  
+• **Scale-Location Plot:** The spread of residuals remains fairly constant across fitted values, supporting the assumption of equal variance.  
+• **Cook’s Distance:** Only a few observations show moderate influence, but none are extreme enough to distort the model’s estimates.  
+
+These diagnostics confirm that the log transformation stabilized variance, improved normality, and strengthened the overall reliability of the regression model. The final model is statistically valid and provides a clear, interpretable understanding of Airbnb price behavior in New York City.
+

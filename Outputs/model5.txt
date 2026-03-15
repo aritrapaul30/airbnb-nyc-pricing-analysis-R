@@ -1,0 +1,29 @@
+
+Call:
+lm(formula = log(price) ~ room_type + neighbourhood_group + number_of_reviews + 
+    availability_365 + minimum_nights + reviews_per_month, data = df_clean)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-3.01163 -0.30327 -0.03812  0.25868  2.93767 
+
+Coefficients:
+                                   Estimate Std. Error  t value Pr(>|t|)    
+(Intercept)                       4.692e+00  1.449e-02  323.760  < 2e-16 ***
+room_typePrivate room            -7.708e-01  4.295e-03 -179.462  < 2e-16 ***
+room_typeShared room             -1.169e+00  1.386e-02  -84.347  < 2e-16 ***
+neighbourhood_groupBrooklyn       2.491e-01  1.432e-02   17.401  < 2e-16 ***
+neighbourhood_groupManhattan      5.579e-01  1.432e-02   38.961  < 2e-16 ***
+neighbourhood_groupQueens         1.193e-01  1.516e-02    7.869 3.65e-15 ***
+neighbourhood_groupStaten Island -1.673e-02  2.758e-02   -0.607    0.544    
+number_of_reviews                -4.859e-04  5.800e-05   -8.377  < 2e-16 ***
+availability_365                  6.702e-04  1.665e-05   40.264  < 2e-16 ***
+minimum_nights                   -3.293e-03  1.340e-04  -24.580  < 2e-16 ***
+reviews_per_month                -9.960e-03  1.636e-03   -6.087 1.16e-09 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.4576 on 48385 degrees of freedom
+Multiple R-squared:  0.5103,	Adjusted R-squared:  0.5102 
+F-statistic:  5041 on 10 and 48385 DF,  p-value: < 2.2e-16
+

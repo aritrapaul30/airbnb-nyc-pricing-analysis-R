@@ -1,0 +1,20 @@
+
+Call:
+lm(formula = log(price) ~ room_type, data = df)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-2.80646 -0.35323 -0.03656  0.30705  2.65216 
+
+Coefficients:
+                       Estimate Std. Error t value Pr(>|t|)    
+(Intercept)            5.109048   0.003149 1622.65   <2e-16 ***
+room_typePrivate room -0.823996   0.004590 -179.53   <2e-16 ***
+room_typeShared room  -1.175031   0.015018  -78.24   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.498 on 48393 degrees of freedom
+Multiple R-squared:  0.4199,	Adjusted R-squared:  0.4199 
+F-statistic: 1.752e+04 on 2 and 48393 DF,  p-value: < 2.2e-16
+

@@ -1,0 +1,24 @@
+
+Call:
+lm(formula = log(price) ~ room_type + neighbourhood_group, data = df)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-2.97036 -0.30313 -0.02345  0.24852  2.75082 
+
+Coefficients:
+                                  Estimate Std. Error  t value Pr(>|t|)    
+(Intercept)                       4.754115   0.014433  329.393  < 2e-16 ***
+room_typePrivate room            -0.764125   0.004365 -175.045  < 2e-16 ***
+room_typeShared room             -1.126606   0.014097  -79.919  < 2e-16 ***
+neighbourhood_groupBrooklyn       0.207844   0.014548   14.286  < 2e-16 ***
+neighbourhood_groupManhattan      0.518829   0.014555   35.647  < 2e-16 ***
+neighbourhood_groupQueens         0.102932   0.015458    6.659 2.79e-11 ***
+neighbourhood_groupStaten Island  0.002817   0.028121    0.100     0.92    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.4666 on 48389 degrees of freedom
+Multiple R-squared:  0.4907,	Adjusted R-squared:  0.4906 
+F-statistic:  7770 on 6 and 48389 DF,  p-value: < 2.2e-16
+
