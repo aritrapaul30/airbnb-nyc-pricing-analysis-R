@@ -1,2 +1,2 @@
-install.packages(c("tidyverse", "ggplot2", "broom", "car",
-                   "ggmap", "corrplot", "lmtest"))
+install.packages(c("tidyverse", "ggplot2", "broom", "car", "stargazer", "MASS", "sandwich", "gridExtra", "ggpubr", 
+                   "ggmap", "corrplot", "lmtest", "forcats", "reshape2"))
