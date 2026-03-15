@@ -27,7 +27,7 @@ This project applies log-linear multiple regression in R to the 2019 Inside Airb
 | 📊 Observations | 48,895 listings |
 | 📋 Variables | 16 columns |
 | 🗺️ Coverage | All 5 NYC boroughs (Manhattan, Brooklyn, Queens, Bronx, Staten Island) |
-| 🌐 Source | [Kaggle — AB_NYC_2019.csv](https://www.kaggle.com/datasets/dgomonov/new-york-city-airbnb-open-data) |
+| 🌐 Source | [Kaggle: AB_NYC_2019.csv](https://www.kaggle.com/datasets/dgomonov/new-york-city-airbnb-open-data) |
 | 🎯 Target Variable | `price` (modelled as `log(price)`) |
 
 **Cleaning Rules Applied:**
